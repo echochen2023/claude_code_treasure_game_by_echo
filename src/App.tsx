@@ -393,15 +393,16 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-amber-50 to-amber-100 flex flex-col items-center justify-center p-8 relative">
-      <div className="absolute top-4 right-4 z-10 flex items-center gap-2 p-3 bg-amber-200/80 backdrop-blur-sm rounded-lg shadow-md border-2 border-amber-400 text-sm">
-        <span className="text-amber-900">👤 {nickname}</span>
-        <Button type="button" variant="outline" size="sm" onClick={handleLogout}>
-          Logout
-        </Button>
-      </div>
-
       <div className="text-center mb-8">
-        <h1 className="text-4xl mb-4 text-amber-900">🏴‍☠️ Treasure Hunt Game 🏴‍☠️</h1>
+        <div className="flex flex-wrap items-center justify-center gap-4 mb-4">
+          <h1 className="text-4xl text-amber-900">🏴‍☠️ Treasure Hunt Game 🏴‍☠️</h1>
+          <div className="flex items-center gap-2 p-3 bg-amber-200/80 backdrop-blur-sm rounded-lg shadow-md border-2 border-amber-400 text-sm">
+            <span className="text-amber-900">👤 {nickname}</span>
+            <Button type="button" variant="outline" size="sm" onClick={handleLogout}>
+              Logout
+            </Button>
+          </div>
+        </div>
         <p className="text-amber-800 mb-4">
           Click on the treasure chests to discover what's inside!
         </p>
