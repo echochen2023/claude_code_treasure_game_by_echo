@@ -17,7 +17,7 @@ export async function requestMagicLink(email: string): Promise<void> {
     email,
     options: {
       shouldCreateUser: true,
-      emailRedirectTo: window.location.origin,
+      emailRedirectTo: window.location.origin + window.location.pathname,
     },
   });
   if (error) throw error;
