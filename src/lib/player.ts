@@ -12,20 +12,24 @@ export class NicknameTakenError extends Error {
   }
 }
 
-export async function requestMagicLink(email: string): Promise<void> {
+export async function requestVerificationCode(email: string): Promise<void> {
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
       shouldCreateUser: true,
-      emailRedirectTo: window.location.origin + window.location.pathname,
     },
   });
   if (error) throw error;
 }
 
-// Fires immediately with the current session (including one just restored from
-// a magic-link redirect), then again on every sign-in/sign-out. Returns an
-// unsubscribe function.
+export async function verifyEmailOtp(email: string, token: string): Promise<void> {
+  const { error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
+  if (error) throw error;
+}
+
+// Fires immediately with the current session (including one just established by
+// verifyEmailOtp), then again on every sign-in/sign-out. Returns an unsubscribe
+// function.
 export function onAuthStateChange(callback: (uid: string | null) => void): () => void {
   const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
     callback(session?.user.id ?? null);

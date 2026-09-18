@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
+import { toast } from 'sonner';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import closedChest from './assets/treasure_closed.png';
@@ -12,7 +13,8 @@ import {
   type Player,
   type PlayHistoryEntry,
   NicknameTakenError,
-  requestMagicLink,
+  requestVerificationCode,
+  verifyEmailOtp,
   onAuthStateChange,
   fetchPlayerProfiles,
   createPlayer,
@@ -26,7 +28,7 @@ import {
 } from './lib/player';
 import { isSupabaseConfigured } from './lib/supabase';
 
-type AuthStage = 'loading' | 'enter-email' | 'awaiting-link' | 'choose-nickname' | 'ready';
+type AuthStage = 'loading' | 'choose-mode' | 'enter-email' | 'enter-code' | 'choose-nickname' | 'ready';
 
 const chestOpenAudio = new Audio(chestOpenSound);
 const evilLaughAudio = new Audio(evilLaughSound);
@@ -49,15 +51,21 @@ export default function App() {
   const [playCount, setPlayCount] = useState(0);
   const [playHistory, setPlayHistory] = useState<PlayHistoryEntry[]>([]);
   const [historyPage, setHistoryPage] = useState(1);
+  const [switcherPage, setSwitcherPage] = useState(1);
   const [emailInput, setEmailInput] = useState('');
   const [sentToEmail, setSentToEmail] = useState('');
+  const [codeInput, setCodeInput] = useState('');
   const [nicknameInput, setNicknameInput] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [isGuest, setIsGuest] = useState(false);
+  const isGuestRef = useRef(isGuest);
+  useEffect(() => { isGuestRef.current = isGuest; }, [isGuest]);
 
   const [newNicknameInput, setNewNicknameInput] = useState('');
   const [renameInput, setRenameInput] = useState('');
   const [isEditingNickname, setIsEditingNickname] = useState(false);
-  const [profileActionError, setProfileActionError] = useState<string | null>(null);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const activeProfile = profiles.find(p => p.id === activeProfileId) ?? null;
   const nickname = activeProfile?.nickname ?? null;
@@ -70,6 +78,14 @@ export default function App() {
   const paginatedHistory = playHistory.slice(
     (currentHistoryPage - 1) * HISTORY_PAGE_SIZE,
     currentHistoryPage * HISTORY_PAGE_SIZE
+  );
+
+  const SWITCHER_PAGE_SIZE = 5;
+  const switcherTotalPages = Math.max(1, Math.ceil(profiles.length / SWITCHER_PAGE_SIZE));
+  const currentSwitcherPage = Math.min(switcherPage, switcherTotalPages);
+  const paginatedProfiles = profiles.slice(
+    (currentSwitcherPage - 1) * SWITCHER_PAGE_SIZE,
+    currentSwitcherPage * SWITCHER_PAGE_SIZE
   );
 
   const initializeGame = () => {
@@ -106,21 +122,25 @@ export default function App() {
   // then again on every future sign-in/sign-out.
   useEffect(() => {
     if (!isSupabaseConfigured) {
-      setAuthStage('enter-email');
+      setAuthStage('choose-mode');
       return;
     }
 
     const unsubscribe = onAuthStateChange((uid) => {
       if (!uid) {
+        if (isGuestRef.current) return;
         setOwnerUid(null);
         setProfiles([]);
         setActiveProfileId(null);
         setPlayCount(0);
         setPlayHistory([]);
-        setAuthStage((prev) => (prev === 'choose-nickname' ? prev : 'enter-email'));
+        setAuthStage((prev) =>
+          prev === 'choose-nickname' || prev === 'enter-code' ? prev : 'choose-mode'
+        );
         return;
       }
 
+      setIsGuest(false);
       setOwnerUid(uid);
 
       (async () => {
@@ -143,7 +163,7 @@ export default function App() {
         } catch (err) {
           console.error('Failed to load player', err);
           setAuthError('登入失敗,請稍後再試');
-          setAuthStage('enter-email');
+          setAuthStage('choose-mode');
         }
       })();
     });
@@ -158,13 +178,63 @@ export default function App() {
 
     setAuthError(null);
     try {
-      await requestMagicLink(trimmed);
+      await requestVerificationCode(trimmed);
       setSentToEmail(trimmed);
-      setAuthStage('awaiting-link');
+      setCodeInput('');
+      setAuthStage('enter-code');
+      toast('驗證碼已寄出,請至信箱查收');
     } catch (err) {
-      console.error('Failed to send magic link', err);
-      setAuthError('登入連結寄送失敗,請稍後再試');
+      console.error('Failed to send verification code', err);
+      setAuthError('驗證碼寄送失敗,請稍後再試');
     }
+  };
+
+  const handleCodeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = codeInput.trim();
+    if (!trimmed) return;
+
+    setAuthError(null);
+    try {
+      await verifyEmailOtp(sentToEmail, trimmed);
+      setCodeInput('');
+    } catch (err) {
+      console.error('Failed to verify code', err);
+      setAuthError('驗證碼錯誤或已過期,請重新輸入或重新寄送');
+    }
+  };
+
+  const handleResendCode = async () => {
+    setAuthError(null);
+    try {
+      await requestVerificationCode(sentToEmail);
+      setCodeInput('');
+      toast('驗證碼已重新寄出,請至信箱查收');
+    } catch (err) {
+      console.error('Failed to resend code', err);
+      setAuthError('驗證碼寄送失敗,請稍後再試');
+    }
+  };
+
+  const handleBackToEmail = () => {
+    setAuthStage('enter-email');
+    setCodeInput('');
+    setAuthError(null);
+    setEmailInput(sentToEmail);
+  };
+
+  const handleGuestStart = () => {
+    setAuthError(null);
+    setIsGuest(true);
+    initializeGame();
+    setAuthStage('ready');
+  };
+
+  const handleLeaveGuest = () => {
+    setIsGuest(false);
+    initializeGame();
+    setAuthError(null);
+    setAuthStage('choose-mode');
   };
 
   const handleNicknameSubmit = async (e: React.FormEvent) => {
@@ -194,7 +264,6 @@ export default function App() {
   const handleSwitchProfile = async (id: string) => {
     if (isGameInProgress || id === activeProfileId || !ownerUid) return;
 
-    setProfileActionError(null);
     setActiveProfileId(id);
     setLastActiveProfileId(ownerUid, id);
     initializeGame();
@@ -211,7 +280,7 @@ export default function App() {
     const trimmed = newNicknameInput.trim();
     if (!trimmed) return;
 
-    setProfileActionError(null);
+    setCreateError(null);
     try {
       const player = await createPlayer(ownerUid, trimmed);
       setProfiles(prev => [...prev, player]);
@@ -223,10 +292,10 @@ export default function App() {
       setPlayHistory([]);
     } catch (err) {
       if (err instanceof NicknameTakenError) {
-        setProfileActionError(err.message);
+        setCreateError(err.message);
       } else {
         console.error('Failed to create nickname', err);
-        setProfileActionError('建立暱稱失敗,請稍後再試');
+        setCreateError('建立暱稱失敗,請稍後再試');
       }
     }
   };
@@ -237,7 +306,7 @@ export default function App() {
     const trimmed = renameInput.trim();
     if (!trimmed) return;
 
-    setProfileActionError(null);
+    setRenameError(null);
     try {
       const updated = await renamePlayer(playerId, trimmed);
       setProfiles(prev => prev.map(p => (p.id === updated.id ? updated : p)));
@@ -245,10 +314,10 @@ export default function App() {
       setRenameInput('');
     } catch (err) {
       if (err instanceof NicknameTakenError) {
-        setProfileActionError(err.message);
+        setRenameError(err.message);
       } else {
         console.error('Failed to rename player', err);
-        setProfileActionError('改暱稱失敗,請稍後再試');
+        setRenameError('改暱稱失敗,請稍後再試');
       }
     }
   };
@@ -266,13 +335,15 @@ export default function App() {
     setPlayHistory([]);
     setEmailInput('');
     setSentToEmail('');
+    setCodeInput('');
     setNicknameInput('');
     setNewNicknameInput('');
     setRenameInput('');
     setIsEditingNickname(false);
-    setProfileActionError(null);
+    setRenameError(null);
+    setCreateError(null);
     setAuthError(null);
-    setAuthStage('enter-email');
+    setAuthStage('choose-mode');
   };
 
   const openBox = (boxId: number) => {
@@ -294,10 +365,10 @@ export default function App() {
         return box;
       });
 
-      // Check if treasure is found or all boxes are opened
+      // Check if treasure is found, or two wrong boxes have been opened (auto-loss)
       const treasureFound = updatedBoxes.some(box => box.isOpen && box.hasTreasure);
-      const allOpened = updatedBoxes.every(box => box.isOpen);
-      if (treasureFound || allOpened) {
+      const skeletonsOpened = updatedBoxes.filter(box => box.isOpen && !box.hasTreasure).length;
+      if (treasureFound || skeletonsOpened >= 2) {
         setGameEnded(true);
         if (playerId && finalScore !== null) {
           recordPlay(playerId, finalScore)
@@ -316,20 +387,6 @@ export default function App() {
     initializeGame();
   };
 
-  if (!isSupabaseConfigured) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-amber-50 to-amber-100 flex items-center justify-center p-8">
-        <div className="max-w-md text-center p-6 bg-amber-200/80 backdrop-blur-sm rounded-lg shadow-lg border-2 border-amber-400">
-          <h2 className="text-xl mb-2 text-amber-900">需要設定 Supabase</h2>
-          <p className="text-amber-800 text-sm">
-            請在專案根目錄建立 <code>.env</code> 檔案,並依照 <code>.env.example</code> 填入
-            <code> VITE_SUPABASE_URL</code> 與 <code>VITE_SUPABASE_ANON_KEY</code>,然後重新啟動 dev server。
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   if (authStage === 'loading') {
     return (
       <div className="min-h-screen bg-gradient-to-b from-amber-50 to-amber-100 flex items-center justify-center p-8">
@@ -338,7 +395,46 @@ export default function App() {
     );
   }
 
-  if (authStage === 'enter-email' || authStage === 'awaiting-link' || authStage === 'choose-nickname') {
+  if (authStage === 'choose-mode') {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-amber-50 to-amber-100 flex flex-col items-center justify-center p-8">
+        <div className="text-center mb-8">
+          <h1 className="text-4xl mb-4 text-amber-900">🏴‍☠️ Treasure Hunt Game 🏴‍☠️</h1>
+          <p className="text-amber-800">選擇登入方式</p>
+        </div>
+
+        <div className="w-full max-w-sm p-6 bg-amber-200/80 backdrop-blur-sm rounded-lg shadow-lg border-2 border-amber-400 flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <Button
+              type="button"
+              disabled={!isSupabaseConfigured}
+              onClick={() => setAuthStage('enter-email')}
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              使用 Email 登入 / 註冊
+            </Button>
+            <p className="text-amber-700 text-xs">
+              保留暱稱、遊戲紀錄與分數,下次可以繼續使用同一個帳號。
+            </p>
+            {!isSupabaseConfigured && (
+              <p className="text-red-600 text-xs">此版本尚未設定 Supabase,無法使用 Email 登入。</p>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Button type="button" variant="outline" onClick={handleGuestStart}>
+              訪客模式,直接開始
+            </Button>
+            <p className="text-amber-700 text-xs">
+              不需註冊,立即開始遊戲,但不會保留任何紀錄或分數。
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (authStage === 'enter-email' || authStage === 'enter-code' || authStage === 'choose-nickname') {
     return (
       <div className="min-h-screen bg-gradient-to-b from-amber-50 to-amber-100 flex flex-col items-center justify-center p-8">
         <div className="text-center mb-8">
@@ -357,26 +453,43 @@ export default function App() {
                 placeholder="you@example.com"
               />
               <Button type="submit" className="bg-amber-600 hover:bg-amber-700 text-white">
-                Send Login Link
+                寄送驗證碼
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setAuthStage('choose-mode')}
+              >
+                ‹ 返回選擇登入方式
               </Button>
             </form>
           )}
 
-          {authStage === 'awaiting-link' && (
-            <div className="flex flex-col gap-2 text-center">
-              <p className="text-amber-900">
-                登入連結已寄到 <strong>{sentToEmail}</strong>,請至信箱點擊連結完成登入。
+          {authStage === 'enter-code' && (
+            <form onSubmit={handleCodeSubmit} className="flex flex-col gap-2">
+              <p className="text-amber-900 text-center">
+                驗證碼已寄到 <strong>{sentToEmail}</strong>,請輸入信件中的驗證碼。
               </p>
-              <p className="text-amber-700 text-sm">完成後這個頁面會自動跳轉,不用手動重新整理。</p>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setAuthStage('enter-email')}
-                className="mt-2"
-              >
-                換一個 email
+              <Input
+                value={codeInput}
+                onChange={(e) => setCodeInput(e.target.value)}
+                placeholder="輸入驗證碼"
+                autoComplete="one-time-code"
+                inputMode="numeric"
+              />
+              <Button type="submit" className="bg-amber-600 hover:bg-amber-700 text-white">
+                驗證並登入
               </Button>
-            </div>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={handleResendCode} className="flex-1">
+                  重新寄送
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={handleBackToEmail} className="flex-1">
+                  換一個 email
+                </Button>
+              </div>
+            </form>
           )}
 
           {authStage === 'choose-nickname' && (
@@ -403,16 +516,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-amber-50 to-amber-100 flex flex-col items-center justify-center p-8 relative">
+      <div className="absolute top-4 right-4 w-64 p-3 bg-amber-200/80 backdrop-blur-sm rounded-lg shadow-md border-2 border-amber-400 flex items-center gap-2 text-sm">
+        <span className="text-amber-900">👤 {isGuest ? '訪客' : nickname}</span>
+        <Button type="button" variant="outline" size="sm" onClick={isGuest ? handleLeaveGuest : handleLogout}>
+          {isGuest ? '離開訪客模式' : 'Logout'}
+        </Button>
+      </div>
       <div className="text-center mb-8">
-        <div className="flex flex-wrap items-center justify-center gap-4 mb-4">
-          <h1 className="text-4xl text-amber-900">🏴‍☠️ Treasure Hunt Game 🏴‍☠️</h1>
-          <div className="flex items-center gap-2 p-3 bg-amber-200/80 backdrop-blur-sm rounded-lg shadow-md border-2 border-amber-400 text-sm">
-            <span className="text-amber-900">👤 {nickname}</span>
-            <Button type="button" variant="outline" size="sm" onClick={handleLogout}>
-              Logout
-            </Button>
-          </div>
-        </div>
+        <h1 className="text-4xl mb-4 text-amber-900">🏴‍☠️ Treasure Hunt Game 🏴‍☠️</h1>
         <p className="text-amber-800 mb-4">
           Click on the treasure chests to discover what's inside!
         </p>
@@ -422,6 +533,7 @@ export default function App() {
       </div>
 
       <div className="flex flex-wrap items-start justify-center gap-8">
+        {!isGuest && (
         <aside className="w-64 p-4 bg-amber-200/80 backdrop-blur-sm rounded-lg shadow-lg border-2 border-amber-400">
           <h2 className="text-amber-900 mb-2">遊戲紀錄</h2>
           <div className="flex flex-col gap-2">
@@ -469,6 +581,7 @@ export default function App() {
             </div>
           )}
         </aside>
+        )}
 
         <main className="flex flex-col items-center">
           <div className="mb-8 flex items-center gap-4 flex-wrap justify-center">
@@ -479,9 +592,11 @@ export default function App() {
               </span>
             </div>
 
+            {!isGuest && (
             <div className="text-amber-800 text-sm text-center">
               <p>Plays: {playCount}</p>
             </div>
+            )}
 
             {gameEnded && (
               <motion.div
@@ -606,93 +721,137 @@ export default function App() {
           )}
         </main>
 
-        <aside className="w-64 p-4 bg-amber-200/80 backdrop-blur-sm rounded-lg shadow-lg border-2 border-amber-400">
-          <h2 className="text-amber-900 mb-2">暱稱管理</h2>
+        {!isGuest && (
+        <div className="flex flex-col gap-4">
+          <aside className="w-64 p-4 bg-amber-200/80 backdrop-blur-sm rounded-lg shadow-lg border-2 border-amber-400">
+            <h2 className="text-amber-900 mb-2">暱稱管理</h2>
 
-          {isEditingNickname ? (
-            <form onSubmit={handleRenameSubmit} className="flex flex-col gap-2 mb-4">
+            {isEditingNickname ? (
+              <form onSubmit={handleRenameSubmit} className="flex flex-col gap-2">
+                <Input
+                  value={renameInput}
+                  onChange={(e) => setRenameInput(e.target.value)}
+                  placeholder="新暱稱"
+                />
+                <div className="flex gap-2">
+                  <Button type="submit" size="sm" className="bg-amber-600 hover:bg-amber-700 text-white">
+                    儲存
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setIsEditingNickname(false);
+                      setRenameInput('');
+                      setRenameError(null);
+                    }}
+                  >
+                    取消
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setIsEditingNickname(true);
+                  setRenameInput(nickname ?? '');
+                  setRenameError(null);
+                }}
+              >
+                改暱稱
+              </Button>
+            )}
+
+            {renameError && (
+              <p className="text-red-600 mt-3 text-sm">{renameError}</p>
+            )}
+          </aside>
+
+          <aside className="w-64 p-4 bg-amber-200/80 backdrop-blur-sm rounded-lg shadow-lg border-2 border-amber-400">
+            <h2 className="text-amber-900 mb-2">建立新暱稱</h2>
+
+            <form onSubmit={handleCreateNickname} className="flex flex-col gap-2">
               <Input
-                value={renameInput}
-                onChange={(e) => setRenameInput(e.target.value)}
-                placeholder="新暱稱"
+                value={newNicknameInput}
+                onChange={(e) => setNewNicknameInput(e.target.value)}
+                placeholder="建立新暱稱"
+                disabled={isGameInProgress}
               />
-              <div className="flex gap-2">
-                <Button type="submit" size="sm" className="bg-amber-600 hover:bg-amber-700 text-white">
-                  儲存
+              <Button
+                type="submit"
+                size="sm"
+                disabled={isGameInProgress}
+                className="bg-amber-600 hover:bg-amber-700 text-white"
+              >
+                建立新暱稱
+              </Button>
+            </form>
+
+            {isGameInProgress && (
+              <p className="text-amber-700 text-xs mt-2">
+                這局遊戲進行中,無法建立新暱稱,請先完成這局或重新開始。
+              </p>
+            )}
+
+            {createError && (
+              <p className="text-red-600 mt-3 text-sm">{createError}</p>
+            )}
+          </aside>
+
+          <aside className="w-64 p-4 bg-amber-200/80 backdrop-blur-sm rounded-lg shadow-lg border-2 border-amber-400">
+            <h2 className="text-amber-900 mb-2">切換使用者</h2>
+            <div className="flex flex-col gap-2">
+              {paginatedProfiles.map(profile => (
+                <Button
+                  key={profile.id}
+                  type="button"
+                  variant={profile.id === activeProfileId ? 'default' : 'outline'}
+                  size="sm"
+                  disabled={isGameInProgress || profile.id === activeProfileId}
+                  onClick={() => handleSwitchProfile(profile.id)}
+                  className="justify-start"
+                >
+                  {profile.nickname}
                 </Button>
+              ))}
+            </div>
+            {profiles.length > 0 && (
+              <div className="flex items-center justify-between mt-3">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    setIsEditingNickname(false);
-                    setRenameInput('');
-                    setProfileActionError(null);
-                  }}
+                  disabled={currentSwitcherPage <= 1}
+                  onClick={() => setSwitcherPage(p => Math.max(1, p - 1))}
                 >
-                  取消
+                  上一頁
+                </Button>
+                <span className="text-amber-800 text-xs">
+                  第 {currentSwitcherPage} / {switcherTotalPages} 頁
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={currentSwitcherPage >= switcherTotalPages}
+                  onClick={() => setSwitcherPage(p => Math.min(switcherTotalPages, p + 1))}
+                >
+                  下一頁
                 </Button>
               </div>
-            </form>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="mb-4"
-              onClick={() => {
-                setIsEditingNickname(true);
-                setRenameInput(nickname ?? '');
-                setProfileActionError(null);
-              }}
-            >
-              改暱稱
-            </Button>
-          )}
-
-          <form onSubmit={handleCreateNickname} className="flex flex-col gap-2 mb-2">
-            <Input
-              value={newNicknameInput}
-              onChange={(e) => setNewNicknameInput(e.target.value)}
-              placeholder="建立新暱稱"
-              disabled={isGameInProgress}
-            />
-            <Button
-              type="submit"
-              size="sm"
-              disabled={isGameInProgress}
-              className="bg-amber-600 hover:bg-amber-700 text-white"
-            >
-              建立新暱稱
-            </Button>
-          </form>
-
-          {isGameInProgress && (
-            <p className="text-amber-700 text-xs mb-2">
-              這局遊戲進行中,無法切換暱稱,請先完成這局或重新開始。
-            </p>
-          )}
-
-          <div className="max-h-[300px] overflow-y-auto flex flex-col gap-2">
-            {profiles.map(profile => (
-              <Button
-                key={profile.id}
-                type="button"
-                variant={profile.id === activeProfileId ? 'default' : 'outline'}
-                size="sm"
-                disabled={isGameInProgress || profile.id === activeProfileId}
-                onClick={() => handleSwitchProfile(profile.id)}
-                className="justify-start"
-              >
-                {profile.nickname}
-              </Button>
-            ))}
-          </div>
-
-          {profileActionError && (
-            <p className="text-red-600 mt-3 text-sm">{profileActionError}</p>
-          )}
-        </aside>
+            )}
+            {isGameInProgress && (
+              <p className="text-amber-700 text-xs mt-2">
+                這局遊戲進行中,無法切換暱稱,請先完成這局或重新開始。
+              </p>
+            )}
+          </aside>
+        </div>
+        )}
       </div>
     </div>
   );
