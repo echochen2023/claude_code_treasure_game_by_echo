@@ -56,6 +56,11 @@ This is a small single-page game, not a multi-route app. Everything runs through
 - `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` are set as Vercel **Config** type env vars, not Secret — Secret is write-only (can't be read back or converted after saving), and these values are meant to be public anyway (see Auth section above on the anon key).
 - Supabase **Authentication → URL Configuration → Redirect URLs** must include the production URL, since magic-link login uses `emailRedirectTo: window.location.origin` — if the origin isn't allow-listed there, login breaks in production even though it works locally.
 - `.claude/commands/deploy_vercel.md` is a custom `/deploy_vercel` command for the routine "commit → confirm → push → verify" deploy loop; it's for shipping local changes to an already-provisioned Vercel project, not for one-time setup (that's covered above).
+- **Second deployment target: GitHub Pages**, independent of Vercel. The repo had to be made **public** for this — GitHub Pages on the Free plan doesn't work on private repos. Live at `https://echochen2023.github.io/claude_code_treasure_game_by_echo/`.
+- Because GitHub Pages serves this as a project page (a subpath, not the domain root), `vite.config.ts`'s `base` is conditional: `process.env.GH_PAGES === 'true' ? '/claude_code_treasure_game_by_echo/' : '/'`. Plain `npm run build` (used by Vercel) stays at `base: '/'` — only the GitHub Pages build needs the subpath prefix, so don't hardcode one `base` for both targets.
+- Deploy mechanism is the `gh-pages` npm package: `npm run deploy` runs `predeploy` (`GH_PAGES=true vite build`) then pushes `build/` to a `gh-pages` branch on `origin`, which GitHub Pages serves from directly (Settings → Pages → Source auto-configured itself off that branch after the first push, no manual dashboard step was needed).
+- Supabase **Authentication → URL Configuration → Redirect URLs** needs the GitHub Pages origin added too, separately from the Vercel one — both origins must be allow-listed since each is a distinct `emailRedirectTo: window.location.origin` value.
+- `.claude/commands/deploy_github_page.md` is the routine deploy command for this target, mirroring `/deploy_vercel`'s pattern (commit → confirm → push `main` → `npm run deploy` → verify).
 
 ## Notes
 
