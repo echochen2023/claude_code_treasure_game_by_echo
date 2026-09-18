@@ -49,6 +49,7 @@
         '@': path.resolve(__dirname, './src'),
       },
     },
+    base: process.env.GH_PAGES === 'true' ? '/claude_code_treasure_game_by_echo/' : '/',
     build: {
       target: 'esnext',
       outDir: 'build',
