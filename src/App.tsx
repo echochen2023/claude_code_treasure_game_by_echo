@@ -48,6 +48,7 @@ export default function App() {
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [playCount, setPlayCount] = useState(0);
   const [playHistory, setPlayHistory] = useState<PlayHistoryEntry[]>([]);
+  const [historyPage, setHistoryPage] = useState(1);
   const [emailInput, setEmailInput] = useState('');
   const [sentToEmail, setSentToEmail] = useState('');
   const [nicknameInput, setNicknameInput] = useState('');
@@ -62,6 +63,14 @@ export default function App() {
   const nickname = activeProfile?.nickname ?? null;
   const playerId = activeProfile?.id ?? null;
   const isGameInProgress = boxes.some(box => box.isOpen) && !gameEnded;
+
+  const HISTORY_PAGE_SIZE = 5;
+  const historyTotalPages = Math.max(1, Math.ceil(playHistory.length / HISTORY_PAGE_SIZE));
+  const currentHistoryPage = Math.min(historyPage, historyTotalPages);
+  const paginatedHistory = playHistory.slice(
+    (currentHistoryPage - 1) * HISTORY_PAGE_SIZE,
+    currentHistoryPage * HISTORY_PAGE_SIZE
+  );
 
   const initializeGame = () => {
     // Randomly assign treasure to one box
@@ -89,6 +98,7 @@ export default function App() {
     ]);
     setPlayCount(count);
     setPlayHistory(history);
+    setHistoryPage(1);
   };
 
   // Listen for the Supabase session: fires immediately with whatever session
@@ -414,11 +424,11 @@ export default function App() {
       <div className="flex flex-wrap items-start justify-center gap-8">
         <aside className="w-64 p-4 bg-amber-200/80 backdrop-blur-sm rounded-lg shadow-lg border-2 border-amber-400">
           <h2 className="text-amber-900 mb-2">遊戲紀錄</h2>
-          <div className="max-h-[300px] overflow-y-auto flex flex-col gap-2">
+          <div className="flex flex-col gap-2">
             {playHistory.length === 0 ? (
               <p className="text-amber-700 text-sm">還沒有紀錄</p>
             ) : (
-              playHistory.map(entry => (
+              paginatedHistory.map(entry => (
                 <div
                   key={entry.id}
                   className="flex items-center justify-between p-2 rounded-lg bg-amber-600/10 text-sm"
@@ -433,6 +443,31 @@ export default function App() {
               ))
             )}
           </div>
+          {playHistory.length > 0 && (
+            <div className="flex items-center justify-between mt-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={currentHistoryPage <= 1}
+                onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+              >
+                上一頁
+              </Button>
+              <span className="text-amber-800 text-xs">
+                第 {currentHistoryPage} / {historyTotalPages} 頁
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={currentHistoryPage >= historyTotalPages}
+                onClick={() => setHistoryPage(p => Math.min(historyTotalPages, p + 1))}
+              >
+                下一頁
+              </Button>
+            </div>
+          )}
         </aside>
 
         <main className="flex flex-col items-center">
