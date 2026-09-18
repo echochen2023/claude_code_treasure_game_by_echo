@@ -31,9 +31,9 @@ description: 把本機的變更部署到 GitHub Pages(build → push 到 gh-page
 
 ## 排查清單(部署後畫面不對時)
 
-- GitHub 的 404 頁面(不是這個 app 的畫面):到 repo 的 **Settings → Pages** 確認 Source 是設成「Deploy from a branch」、分支選 `gh-pages`、資料夾選 `/ (root)`。第一次跑 `npm run deploy` 建立 `gh-pages` 分支後,這個設定通常要手動確認一次(不一定會自動生效)。
+- GitHub 的 404 頁面(不是這個 app 的畫面):到 repo 的 **Settings → Pages** 確認 Source 是設成「Deploy from a branch」、分支選 `gh-pages`、資料夾選 `/ (root)`。實測第一次跑 `npm run deploy` 建立 `gh-pages` 分支後,GitHub 有自動偵測並啟用這個設定,但如果第一次部署後還是 404,還是去這裡確認一次。剛啟用時網站生效也可能要等 1~2 分鐘。
 - 空白頁,主控台看到 assets 404(路徑對不到 `/claude_code_treasure_game_by_echo/...`):代表這次是用一般 `npm run build`(base `/`)build 出來的,不是用 `npm run deploy`/`predeploy` 的 `GH_PAGES=true` 版本。重新跑 `npm run deploy` 而不是手動 `gh-pages -d build` 配上舊的 `build/`。
-- 登入信的連結點了失敗:代表 Supabase 後台 **Authentication → URL Configuration → Redirect URLs** 沒有加入 `https://echochen2023.github.io/claude_code_treasure_game_by_echo/`。這個網址要額外加,跟 Vercel 那個網址是分開的兩筆設定,不會互相取代。
+- 登入信的連結點了失敗、跳回 `localhost:3000` 並帶著 `#access_token=...`:代表 Supabase 後台 **Authentication → URL Configuration → Redirect URLs** 裡 GitHub Pages 那筆網址加錯了。**必須是不帶路徑的 origin `https://echochen2023.github.io`,不能是完整頁面網址 `https://echochen2023.github.io/claude_code_treasure_game_by_echo/`**——app 傳給 Supabase 的 `emailRedirectTo` 是 `window.location.origin`,這個值本來就不含路徑,只有 scheme+host+port。帶路徑的網址在允許清單裡對不起來,Supabase 會悄悄 fallback 回 Site URL(`http://localhost:3000`),而不是報錯。改完設定後要重新請求一次新的登入信,舊信裡的連結網址已經定型了。這個網址設定跟 Vercel 那筆是分開的兩筆,不會互相取代。
 - repo 被改回 Private:GitHub Pages 在 Free 方案的 Private repo 上會直接失效,網站會 404。
 
 ## 不是這個命令要處理的情境
