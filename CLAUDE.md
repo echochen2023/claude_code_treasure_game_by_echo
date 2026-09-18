@@ -47,6 +47,16 @@ This is a small single-page game, not a multi-route app. Everything runs through
 - `src/styles/globals.css` defines the shadcn/ui design tokens (CSS custom properties for light/dark themes) and has real `@theme`/`@custom-variant` source directives, but is **not imported anywhere** in the app currently — it's a leftover from the design-system template. Wiring up a live build from this file is a reasonable escape hatch if a future change needs many new/arbitrary utility classes, but hasn't been necessary so far — one-off gaps have been routed around with equivalent already-present classes instead.
 - `src/guidelines/Guidelines.md` is an empty shadcn template for project-specific AI design guidelines; nothing has been filled in yet.
 
+## Deployment
+
+- This is now a git repo, remote `origin` → `https://github.com/echochen2023/claude_code_treasure_game_by_echo.git`, pushed on branch `main`.
+- Hosted on Vercel via the GitHub integration: any push to `main` auto-triggers a Production deployment, no `vercel` CLI involved (it isn't installed locally). Production URL: `https://claude-code-treasure-game-by-echo.vercel.app`.
+- Vercel's Output Directory is manually overridden to `build` (its Vite preset defaults to `dist`, which doesn't match this project's `vite.config.ts` `build.outDir`).
+- Vercel's Node.js Version (Project Settings → General) is set independently from this repo's `.nvmrc`; it only affects the build step, not local dev, so it isn't pinned down to Node 18 like local dev is.
+- `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` are set as Vercel **Config** type env vars, not Secret — Secret is write-only (can't be read back or converted after saving), and these values are meant to be public anyway (see Auth section above on the anon key).
+- Supabase **Authentication → URL Configuration → Redirect URLs** must include the production URL, since magic-link login uses `emailRedirectTo: window.location.origin` — if the origin isn't allow-listed there, login breaks in production even though it works locally.
+- `.claude/commands/deploy_vercel.md` is a custom `/deploy_vercel` command for the routine "commit → confirm → push → verify" deploy loop; it's for shipping local changes to an already-provisioned Vercel project, not for one-time setup (that's covered above).
+
 ## Notes
 
 - This project was originally exported from a Figma/Builder.io design tool, which explains the versioned import aliasing in `vite.config.ts` and the presence of a full unused shadcn component library.
